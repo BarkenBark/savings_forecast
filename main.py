@@ -15,7 +15,10 @@ cfg_init = {
     'n_months': 360,
     'annual_raise': 0.03,
     'months_of_interest': [60, 120, 240, 360],
-    'n_trajectories': 1000
+    'n_trajectories': 1000,
+    'pension_withdrawal_monthly': 30000,
+    'months_until_death': 75*12,
+    'pension_annual_return': 0.02
 }
 
 with open('kde_monthlyreturns_omx_30years.pickle', 'rb') as file:
@@ -88,6 +91,12 @@ class Simulator:
         md = self.deposit_trajectories[:,month_idx].mean()
         return md
 
+    def get_fire_portfolio_value_over_time(self):
+        L = self.cfg['pension_withdrawal_monthly']
+        r = (1+self.cfg['pension_annual_return'])**(1/12) - 1
+        T_d = self.cfg['months_until_death']
+        return L * (1- (1+r)**(np.arange(self.cfg['n_months'])-T_d)) / r
+
     def __sample_monthly_returns(self):
         n = self.cfg['n_trajectories']*self.cfg['n_months'] 
         return monthly_return_kde.resample(n).reshape(self.cfg['n_trajectories'], self.cfg['n_months'])
@@ -113,8 +122,6 @@ class Simulator:
             self.value_trajectories[:, month_idx-3]+ \
             self.deposit_trajectories[:, month_idx-12:month_idx].sum(axis=1) \
             ) / 4
-
-
 
 class MainWindow:
 
@@ -193,6 +200,10 @@ class MainWindow:
         self.__add_slider('value_init', title="Initial value (kr)", vallims=[0, 500000], valsteporder=4)
         self.__add_slider('standard_rate_annual_mean', title="Standard rate", vallims=[-0.03, 0.06], valsteporder=-3)
 
+        self.__add_slider('pension_withdrawal_monthly', title="Monthly pension (kr)", vallims=[20000,50000], valsteporder=3)
+        self.__add_slider('pension_annual_return', title='Pension annual return (kr)', vallims=[-0.05, 0.1], valsteporder=-3)
+        self.__add_slider('months_until_death', title="Months until death", vallims=[45*12, 75*12], valsteporder=1)
+
     def __recalculate_and_draw(self, key, val):
         self.simulator.update_cfg_item(key, val)
         val_mean, val_05, val_95, dep, val_init = self.simulator.get_shit()
@@ -220,6 +231,12 @@ class MainWindow:
             self.deposit_line.set_ydata(value_init+np.cumsum(np.array(dep)))
         else:
             self.deposit_line = self.ax_plot.semilogy([i/12 for i in range(len(dep))], value_init+np.cumsum(np.array(dep)), color='red')[0]
+
+        fire = self.simulator.get_fire_portfolio_value_over_time()
+        if hasattr(self, "fire_line"):
+            self.fire_line.set_ydata(fire)
+        else:
+            self.fire_line = self.ax_plot.semilogy([i/12 for i in range(len(fire))], fire, color='purple')[0]
 
         # Update scale if necessary
         lims_y = self.ax_plot.get_ylim()
