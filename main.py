@@ -18,7 +18,7 @@ cfg_init = {
     'n_trajectories': 10
 }
 
-with open('kde.pickle', 'rb') as file:
+with open('kde_omx_30years.pickle', 'rb') as file:
         monthly_return_kde = pickle.load(file)
 
 class Simulator:
