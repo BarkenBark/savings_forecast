@@ -95,10 +95,10 @@ class Simulator:
         L = self.cfg['pension_withdrawal_monthly']
         r = (1+self.cfg['pension_annual_return'])**(1/12) - 1
         T_d = self.cfg['months_until_death']
-        if r == 0:
-            return L*(np.arange(self.cfg['n_months'])-T_d)
+        if abs(r) < 1e-5:
+            return -L*(np.arange(self.cfg['n_months'])-T_d)
         else:
-            return L * (1- (1+r)**(np.arange(self.cfg['n_months'])-T_d)) / r
+            return L * (1-(1+r)**(np.arange(self.cfg['n_months'])-T_d)) / r
 
     def __sample_monthly_returns(self):
         n = self.cfg['n_trajectories']*self.cfg['n_months'] 
