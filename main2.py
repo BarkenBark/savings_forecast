@@ -2,6 +2,7 @@ import pickle
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
+import matplotlib.gridspec as gridspec
 
 from plot_utils import autoscale, get_lims
 
@@ -14,7 +15,7 @@ cfg_init = {
     'n_months': 480,
     'annual_raise': 0.03,
     'months_of_interest': [60, 120, 240, 360],
-    'n_trajectories': 500
+    'n_trajectories': 10
 }
 
 with open('kde.pickle', 'rb') as file:
@@ -77,6 +78,9 @@ class Simulator:
         self.calculate_statistical_trajectories()    
         return self.value_mean_trajectory, self.value_05_quant_trajectory, self.value_95_quant_trajectory, self.deposit_trajectories[0,:], self.cfg['value_init']
 
+    def get_month_value_samples(self, month_idx):
+        return self.value_trajectories[:, month_idx]
+
     def __sample_monthly_returns(self):
         n = self.cfg['n_trajectories']*self.cfg['n_months'] 
         return monthly_return_kde.resample(n).reshape(self.cfg['n_trajectories'], self.cfg['n_months'])
@@ -111,10 +115,18 @@ class MainWindow:
 
     def __init__(self, cfg):
         self.simulator = Simulator(cfg)
+        self.marked_year = 5
         self.__initialize_figure(cfg['n_months'])
         val, val_low, val_high, dep, val_init = self.simulator.get_shit()
         self.__plot_trajectory(val, val_low, val_high, dep, val_init)
-        plt.show()
+        self.__plot_year_marker()
+        self.__plot_histogram()# TO-DO: Allow choosing month 
+        plt.show(block=False)
+
+        while True:
+            user_in = input("Choose a year: ")
+            year = int(user_in)
+            self.__set_marked_year(year)
 
     def __add_slider(self, key, vallims=None, valinit=None, valsteporder=None, title=None, **kwargs):
 
@@ -149,18 +161,26 @@ class MainWindow:
     def __initialize_figure(self, n_months):
 
         self.fig = plt.figure(figsize=(16,9))
+        spec = gridspec.GridSpec(ncols=2, nrows=5, figure=self.fig, hspace=0.5)
 
-        self.ax_plot = self.fig.add_subplot(1,2,2)
+        self.ax_plot = self.fig.add_subplot(spec[0:2, 1])
         self.ax_plot.grid(axis='x', which='major')
         self.ax_plot.grid(axis='y', which='both')
         self.ax_plot.set_xlabel("Years from now")
-        self.ax_plot.set_ylabel("Capital (kr)")
+        self.ax_plot.set_ylabel("Value (kr)")
         self.ax_plot.set_xlim([0, (n_months+1)/12])
+        self.ax_plot.set_title("Value over time")
+
+        self.ax_histogram = self.fig.add_subplot(spec[3:5, 1])
+        self.ax_histogram.set_title(self.__histogram_title(self.marked_year))
+        self.ax_histogram.set_xlabel("Value (Mkr)")
+        self.ax_histogram.set_ylabel("Probability density")
+        self.ax_histogram.set_autoscale_on(False)
         
-        self.trajectory_line = None
-        self.trajectory_line_low = None
-        self.trajectory_line_high = None
-        self.deposit_line = None
+        # self.trajectory_line = None
+        # self.trajectory_line_low = None
+        # self.trajectory_line_high = None
+        # self.deposit_line = None
 
         self.sliders = {}
         self.slider_counter = 0
@@ -175,32 +195,69 @@ class MainWindow:
         self.simulator.update_cfg_item(key, val)
         val_mean, val_05, val_95, dep, val_init = self.simulator.get_shit()
         self.__plot_trajectory(val_mean, val_05, val_95, dep, val_init)
+        #self.__plot_histogram()
 
     def __plot_trajectory(self, val, val_low, val_high, dep, value_init):
-        if self.trajectory_line is not None:
+        if hasattr(self, "trajectory_line"):
             self.trajectory_line.set_ydata(val)
         else:
-            self.trajectory_line = self.ax_plot.semilogy([i/12 for i in range(len(val))], val)[0]
+            self.trajectory_line = self.ax_plot.semilogy([i/12 for i in range(len(val))], val, color='#1f77b4')[0]
 
-        if self.trajectory_line_low is not None:
+        if hasattr(self, "trajectory_line_low"):
             self.trajectory_line_low.set_ydata(val_low)
         else:
-            self.trajectory_line_low = self.ax_plot.semilogy([i/12 for i in range(len(val_low))], val_low)[0]
+            self.trajectory_line_low = self.ax_plot.semilogy([i/12 for i in range(len(val_low))], val_low, color='#1f77b4', linestyle='--')[0]
 
-        if self.trajectory_line_high is not None:
+        if hasattr(self, "trajectory_line_high"):
             self.trajectory_line_high.set_ydata(val_high)
         else:
-            self.trajectory_line_high = self.ax_plot.semilogy([i/12 for i in range(len(val_high))], val_high)[0]
+            self.trajectory_line_high = self.ax_plot.semilogy([i/12 for i in range(len(val_high))], val_high, color='#1f77b4', linestyle='--')[0]
 
-        if self.deposit_line is not None:
+        if hasattr(self, "deposit_line"):
             self.deposit_line.set_ydata(value_init+np.cumsum(np.array(dep)))
         else:
-            self.deposit_line = self.ax_plot.semilogy([i/12 for i in range(len(dep))], value_init+np.cumsum(np.array(dep)))[0]
+            self.deposit_line = self.ax_plot.semilogy([i/12 for i in range(len(dep))], value_init+np.cumsum(np.array(dep)), color='red')[0]
 
         # Update scale if necessary
         lims_y = self.ax_plot.get_ylim()
         if (max(val_high) > lims_y[1]*0.9) or (max(val_high) < lims_y[1] / 10) or (min(val_low) < lims_y[0]):
             autoscale(self.ax_plot, axis='y', factor=2)
+
+        self.fig.canvas.draw()
+
+    def __set_marked_year(self, year):
+        self.marked_year = year
+        self.__plot_year_marker()
+        self.__plot_histogram()
+        self.fig.canvas.draw()
+
+    def __histogram_title(self, year):
+        return f"Portfolio value distribution at year {year}"
+
+    def __plot_year_marker(self):
+        if not hasattr(self, "year_marker_line"): # Todo: Change other lines like this
+            self.year_marker_line = self.ax_plot.axvline(x=self.marked_year, color='black', linestyle='--')
+        else:
+            self.year_marker_line.set_xdata([self.marked_year])
+
+    def __plot_histogram(self):
+        month_value_samples = self.simulator.get_month_value_samples(12*self.marked_year)
+
+        if hasattr(self, "histogram_bars"):
+            for bar in self.histogram_bars:
+                bar.remove()
+        month_value_samples_mkr = month_value_samples/1000000
+        hist_vals, _, self.histogram_bars = self.ax_histogram.hist(month_value_samples_mkr, density=True, color='#1f77b4', bins=20)
+
+        # Update scale if necessary (Assume you've turned autscale off above)
+        lims_x = self.ax_histogram.get_xlim()
+        lims_y = self.ax_histogram.get_ylim()
+        if (max(month_value_samples_mkr) > lims_x[1]) or (max(month_value_samples_mkr) < lims_x[1] / 10) or (min(month_value_samples_mkr) < lims_x[0]):
+            self.ax_histogram.set_xlim([0, max(month_value_samples_mkr)*3])
+        if (max(hist_vals) > lims_y[1]*0.95) or (max(hist_vals) < lims_y[1] / 8):
+            self.ax_histogram.set_ylim([0, max(hist_vals)*2])
+
+        self.ax_histogram.set_title(self.__histogram_title(self.marked_year))
 
 
 def main(cfg):
