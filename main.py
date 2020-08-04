@@ -10,7 +10,7 @@ cfg_init = {
     'value_init': 336000,
     'deposit_monthly': 10000,
     'return_annual_mean': (1+0.008027)**12-1, #0.04,
-    'return_monthly_std': 0.054027,
+    'return_annual_std': 0.2061, #0.054027,
     'standard_rate_annual_mean': 0.005,
     'n_months': 360,
     'annual_raise': 0.03,
@@ -24,6 +24,17 @@ cfg_init = {
 
 with open('kde_monthlyreturns_omx_30years.pickle', 'rb') as file:
         monthly_return_kde = pickle.load(file)
+
+### MISC FUNCTIONS
+def annual_to_monthly_return_statistics(mean_annual, std_annual):
+    mean_monthly = (1+mean_annual)**(1/12) - 1
+    std_monthly = np.sqrt(((1+mean_monthly)**24 + std_annual**2) ** (1/12) - (1+mean_monthly)**2)
+    return mean_monthly, std_monthly
+
+def monthly_to_annual_return_statistics(mean_monthly, std_monthly):
+    mean_annual = (1+mean_monthly)**12 - 1
+    std_annual = np.sqrt((std_monthly**2+(1+mean_monthly)**2)**12 - (1+mean_monthly)**24)
+    return mean_annual, std_annual
 
 class Simulator:
 
@@ -53,10 +64,6 @@ class Simulator:
         self.value_05_quant_trajectory = np.zeros((self.cfg['n_months']+1))
 
     def simulate_trajectories(self):
-
-        # Pre-calculations
-        # return_monthly_mean = (1+self.cfg['return_annual_mean'])**(1/12)-1
-        # return_monthly_std = self.cfg['return_monthly_std']
 
         self.value_trajectories[:, 0] = self.cfg['value_init']
         self.return_trajectories = self.__sample_monthly_returns() #shape=[n_trajectories, n_months]
@@ -106,8 +113,8 @@ class Simulator:
             n = self.cfg['n_trajectories']*self.cfg['n_months'] 
             return monthly_return_kde.resample(n).reshape(self.cfg['n_trajectories'], self.cfg['n_months'])
         elif self.cfg['return_model'] == "normal":
-            return_monthly_mean = (1+self.cfg['return_annual_mean'])**(1/12)-1
-            return np.random.normal(return_monthly_mean, self.cfg['return_monthly_std'], size=(self.cfg['n_trajectories'], self.cfg['n_months'])) 
+            return_monthly_mean, return_monthly_std = annual_to_monthly_return_statistics(self.cfg['return_annual_mean'], self.cfg['return_annual_std'])
+            return np.random.normal(return_monthly_mean, return_monthly_std, size=(self.cfg['n_trajectories'], self.cfg['n_months'])) 
 
     def __sample_monthly_deposits(self):
         monthly_deposit_trajectory = self.cfg['deposit_monthly']*(1+self.cfg['annual_raise'])**(np.arange(self.cfg['n_months']) // 12)
@@ -203,8 +210,8 @@ class MainWindow:
         self.slider_counter = 0
 
         self.__add_slider('deposit_monthly', title="Monthly deposit (kr)", vallims=[0,20000], valsteporder=2)
-        self.__add_slider('return_annual_mean', title="Annual return", vallims=[-0.10, 0.20], valsteporder=-3)
-        self.__add_slider('return_monthly_std', vallims=[0.01, 0.1], valsteporder=-3)
+        self.__add_slider('return_annual_mean', title="Annual return mean", vallims=[-0.10, 0.20], valsteporder=-3)
+        self.__add_slider('return_annual_std', title="Annual return std", vallims=[0.01, 0.5], valsteporder=-3)
         self.__add_slider('annual_raise', title="Annual raise", vallims=[0, 0.05], valsteporder=-3)
         self.__add_slider('value_init', title="Initial value (kr)", vallims=[0, 500000], valsteporder=4)
         self.__add_slider('standard_rate_annual_mean', title="Standard rate", vallims=[-0.03, 0.06], valsteporder=-3)
