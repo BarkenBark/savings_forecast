@@ -1,7 +1,7 @@
 import pickle
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.widgets import Slider
+from matplotlib.widgets import Slider, CheckButtons
 import matplotlib.gridspec as gridspec
 
 from plot_utils import autoscale, get_lims
@@ -18,7 +18,8 @@ cfg_init = {
     'n_trajectories': 1000,
     'pension_withdrawal_monthly': 30000,
     'months_until_death': 75*12,
-    'pension_annual_return': 0.02
+    'pension_annual_return': 0.02,
+    'return_model': 'kde'
 }
 
 with open('kde_monthlyreturns_omx_30years.pickle', 'rb') as file:
@@ -101,8 +102,12 @@ class Simulator:
             return L * (1-(1+r)**(np.arange(self.cfg['n_months'])-T_d)) / r
 
     def __sample_monthly_returns(self):
-        n = self.cfg['n_trajectories']*self.cfg['n_months'] 
-        return monthly_return_kde.resample(n).reshape(self.cfg['n_trajectories'], self.cfg['n_months'])
+        if self.cfg['return_model'] == "kde":
+            n = self.cfg['n_trajectories']*self.cfg['n_months'] 
+            return monthly_return_kde.resample(n).reshape(self.cfg['n_trajectories'], self.cfg['n_months'])
+        elif self.cfg['return_model'] == "normal":
+            return_monthly_mean = (1+self.cfg['return_annual_mean'])**(1/12)-1
+            return np.random.normal(return_monthly_mean, self.cfg['return_monthly_std'], size=(self.cfg['n_trajectories'], self.cfg['n_months'])) 
 
     def __sample_monthly_deposits(self):
         monthly_deposit_trajectory = self.cfg['deposit_monthly']*(1+self.cfg['annual_raise'])**(np.arange(self.cfg['n_months']) // 12)
@@ -199,6 +204,7 @@ class MainWindow:
 
         self.__add_slider('deposit_monthly', title="Monthly deposit (kr)", vallims=[0,20000], valsteporder=2)
         self.__add_slider('return_annual_mean', title="Annual return", vallims=[-0.10, 0.20], valsteporder=-3)
+        self.__add_slider('return_monthly_std', vallims=[0.01, 0.1], valsteporder=-3)
         self.__add_slider('annual_raise', title="Annual raise", vallims=[0, 0.05], valsteporder=-3)
         self.__add_slider('value_init', title="Initial value (kr)", vallims=[0, 500000], valsteporder=4)
         self.__add_slider('standard_rate_annual_mean', title="Standard rate", vallims=[-0.03, 0.06], valsteporder=-3)
@@ -206,6 +212,17 @@ class MainWindow:
         self.__add_slider('pension_withdrawal_monthly', title="Monthly pension (kr)", vallims=[20000,50000], valsteporder=3)
         self.__add_slider('pension_annual_return', title='Pension annual return (kr)', vallims=[-0.05, 0.1], valsteporder=-3)
         self.__add_slider('months_until_death', title="Months until death", vallims=[45*12, 75*12], valsteporder=1)
+
+        self.ax_button_return_model = self.fig.add_subplot(self.MAX_NO_SLIDERS, 10, (self.MAX_NO_SLIDERS-1)*10+1)
+        self.button_return_model = CheckButtons(self.ax_button_return_model, ["Use fitted return model"], [True])
+        def onc(label):
+            checked = self.button_return_model.get_status()[0]
+            if checked:
+                self.simulator.update_cfg_item("return_model", "kde")
+            else:
+                self.simulator.update_cfg_item("return_model", "normal")
+
+        self.button_return_model.on_clicked(onc)
 
     def __recalculate_and_draw(self, key, val):
         self.simulator.update_cfg_item(key, val)
@@ -244,7 +261,8 @@ class MainWindow:
         # Update scale if necessary
         lims_y = self.ax_plot.get_ylim()
         if (max(val_high) > lims_y[1]*0.9) or (max(val_high) < lims_y[1] / 10) or (min(val_low) < lims_y[0]):
-            autoscale(self.ax_plot, axis='y', factor=2)
+            #autoscale(self.ax_plot, axis='y', factor=2)
+            self.ax_plot.set_ylim([min(val_low)*0.1, max(val_high)*2])
 
     def __set_marked_year(self, year):
         self.marked_year = year
